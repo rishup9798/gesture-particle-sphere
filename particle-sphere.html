@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Sphere — Gesture Field</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,500;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#08090b;
+    --ink:#eae6dd;
+    --ink-dim:#83807a;
+    --line: rgba(234,230,221,0.13);
+    --accent:#cbbfa5;
+    --ok:#8fd19e;
+    --off:#5c5952;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg);
+    overflow:hidden;
+    font-family:'IBM Plex Mono', monospace;
+    color:var(--ink);
+  }
+  #app{ position:fixed; inset:0; }
+
+  #webcam{
+    position:fixed; inset:0; width:100%; height:100%;
+    object-fit:cover;
+    transform:scaleX(-1);
+    opacity:0;
+    filter:brightness(0.55) saturate(0.9);
+    transition:opacity 0.6s ease;
+    z-index:0;
+  }
+  #webcam.visible{ opacity:1; }
+
+  #bgFade{
+    position:fixed; inset:0; z-index:0;
+    background: radial-gradient(ellipse at 50% 40%, rgba(203,191,165,0.05), transparent 60%);
+    pointer-events:none;
+  }
+
+  #scene{
+    position:fixed; inset:0; z-index:1;
+    display:block;
+  }
+
+  header{
+    position:fixed; top:0; left:0; right:0; z-index:3;
+    display:flex; align-items:flex-start; justify-content:space-between;
+    padding:28px 34px 16px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(to bottom, rgba(8,9,11,0.55), transparent);
+    pointer-events:none;
+  }
+  header > *{ pointer-events:auto; }
+
+  #title h1{
+    margin:0;
+    font-family:'Fraunces', serif;
+    font-weight:500;
+    font-style:italic;
+    font-size:26px;
+    letter-spacing:0.01em;
+    line-height:1;
+  }
+  #title p{
+    margin:8px 0 0;
+    font-size:10px;
+    letter-spacing:0.22em;
+    text-transform:uppercase;
+    color:var(--ink-dim);
+  }
+
+  #controls{
+    display:flex; align-items:center; gap:18px;
+  }
+
+  #status{
+    display:flex; align-items:center; gap:8px;
+    font-size:10px; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--ink-dim);
+  }
+  #statusDot{
+    width:6px; height:6px; border-radius:50%;
+    background:var(--off);
+    box-shadow:0 0 0 3px rgba(92,89,82,0.15);
+    transition:background 0.3s ease, box-shadow 0.3s ease;
+  }
+  #statusDot.on{
+    background:var(--ok);
+    box-shadow:0 0 0 3px rgba(143,209,158,0.18);
+  }
+
+  button#bgToggle{
+    appearance:none;
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--ink);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    padding:9px 16px;
+    border-radius:100px;
+    cursor:pointer;
+    transition:border-color 0.25s ease, color 0.25s ease, background 0.25s ease;
+  }
+  button#bgToggle:hover{
+    border-color:var(--accent);
+    color:var(--accent);
+    background:rgba(203,191,165,0.06);
+  }
+  button#bgToggle.active{
+    color:var(--bg);
+    background:var(--accent);
+    border-color:var(--accent);
+  }
+
+  footer{
+    position:fixed; left:0; right:0; bottom:0; z-index:3;
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    padding:20px 24px 24px;
+    font-size:10px; letter-spacing:0.1em;
+    color:var(--ink-dim);
+    pointer-events:none;
+    text-transform:uppercase;
+  }
+  footer .sep{ opacity:0.4; }
+  footer span#fingerReadout{ color:var(--accent); }
+
+  #ringWrap{
+    position:fixed; top:0; left:0; z-index:4;
+    width:120px; height:120px;
+    transform:translate(-1000px,-1000px);
+    pointer-events:none;
+    opacity:0;
+    transition:opacity 0.18s ease;
+  }
+  #ringWrap.show{ opacity:1; }
+  #ringWrap svg{ width:100%; height:100%; transform:rotate(-90deg); }
+  #ringWrap circle{ fill:none; }
+  #ringTrack{ stroke:rgba(234,230,221,0.14); stroke-width:2; }
+  #ringProgress{
+    stroke:var(--accent);
+    stroke-width:2.5;
+    stroke-linecap:round;
+  }
+  #ringCenter{
+    position:absolute; top:50%; left:50%;
+    width:5px; height:5px; margin:-2.5px 0 0 -2.5px;
+    border-radius:50%;
+    background:var(--accent);
+  }
+
+  @media (max-width:640px){
+    header{ padding:20px 18px 14px; }
+    #title h1{ font-size:20px; }
+    #controls{ gap:10px; }
+    button#bgToggle{ padding:8px 12px; }
+    footer{ font-size:9px; padding:16px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <video id="webcam" autoplay playsinline muted></video>
+  <div id="bgFade"></div>
+  <canvas id="scene"></canvas>
+
+  <div id="ringWrap">
+    <svg viewBox="0 0 120 120">
+      <circle id="ringTrack" cx="60" cy="60" r="52"></circle>
+      <circle id="ringProgress" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="326.7"></circle>
+    </svg>
+    <div id="ringCenter"></div>
+  </div>
+
+  <header>
+    <div id="title">
+      <h1>Particle&nbsp;Sphere</h1>
+      <p>gesture-driven point field</p>
+    </div>
+    <div id="controls">
+      <div id="status">
+        <span id="statusDot"></span>
+        <span id="statusText">searching</span>
+      </div>
+      <button id="bgToggle">Webcam BG</button>
+    </div>
+  </header>
+
+  <div id="loadError" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10; max-width:480px; text-align:center; padding:24px 28px; border:1px solid var(--line); border-radius:8px; background:#0c0d10; font-size:12px; line-height:1.7; color:var(--ink-dim);">
+    <strong style="color:var(--ink); display:block; margin-bottom:8px; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.08em;">SCRIPT FAILED TO LOAD</strong>
+    A required library was blocked by your network, browser privacy setting, or an extension. Try disabling tracking/ad-blocking for this page, or a different network, then reload.
+  </div>
+
+  <footer>
+    <span id="hintMain">show a hand to move &amp; rotate the field</span>
+    <span class="sep">·</span>
+    <span id="fingerReadout">0 fingers</span>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js" onerror="document.getElementById('loadError').style.display='block'"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous" onerror="document.getElementById('loadError').style.display='block'"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous" onerror="document.getElementById('loadError').style.display='block'"></script>
+
+<script>
+(function(){
+  "use strict";
+
+  if(typeof THREE === 'undefined' || typeof Hands === 'undefined' || typeof Camera === 'undefined'){
+    document.getElementById('loadError').style.display = 'block';
+    return;
+  }
+
+  /* ---------------------------------------------------------
+     THREE.JS SCENE
+  --------------------------------------------------------- */
+  const PARTICLE_COUNT = 3000;
+  const canvas = document.getElementById('scene');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(0, 0, 7);
+
+  const group = new THREE.Group();
+  scene.add(group);
+
+  // Fibonacci sphere distribution -> base unit-sphere positions
+  function fibonacciSphere(count){
+    const pts = new Float32Array(count*3);
+    const offset = 2 / count;
+    const increment = Math.PI * (3 - Math.sqrt(5));
+    for(let i=0;i<count;i++){
+      const y = ((i * offset) - 1) + (offset/2);
+      const r = Math.sqrt(Math.max(0, 1 - y*y));
+      const phi = i * increment;
+      const x = Math.cos(phi) * r;
+      const z = Math.sin(phi) * r;
+      pts[i*3] = x; pts[i*3+1] = y; pts[i*3+2] = z;
+    }
+    return pts;
+  }
+
+  const basePos = fibonacciSphere(PARTICLE_COUNT);
+  const livePos = new Float32Array(basePos); // current, animated buffer
+  const velocities = new Float32Array(PARTICLE_COUNT*3);
+  const reformFrom = new Float32Array(PARTICLE_COUNT*3);
+  const hueJitter = new Float32Array(PARTICLE_COUNT);
+  const lightJitter = new Float32Array(PARTICLE_COUNT);
+  for(let i=0;i<PARTICLE_COUNT;i++){
+    hueJitter[i] = (Math.random()-0.5) * 26;
+    lightJitter[i] = (Math.random()-0.5) * 0.22;
+  }
+
+  const colors = new Float32Array(PARTICLE_COUNT*3);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(livePos, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const material = new THREE.PointsMaterial({
+    size: 0.05,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.92,
+    sizeAttenuation: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  const points = new THREE.Points(geometry, material);
+  group.add(points);
+
+  function hslToRgb(h, s, l){
+    h = ((h % 360) + 360) % 360;
+    const c = (1 - Math.abs(2*l - 1)) * s;
+    const x = c * (1 - Math.abs(((h/60) % 2) - 1));
+    const m = l - c/2;
+    let r=0,g=0,b=0;
+    if(h < 60){ r=c; g=x; b=0; }
+    else if(h < 120){ r=x; g=c; b=0; }
+    else if(h < 180){ r=0; g=c; b=x; }
+    else if(h < 240){ r=0; g=x; b=c; }
+    else if(h < 300){ r=x; g=0; b=c; }
+    else { r=c; g=0; b=x; }
+    return [r+m, g+m, b+m];
+  }
+
+  function updateColors(hue){
+    for(let i=0;i<PARTICLE_COUNT;i++){
+      const [r,g,b] = hslToRgb(hue + hueJitter[i], 0.62, 0.56 + lightJitter[i]);
+      colors[i*3] = r; colors[i*3+1] = g; colors[i*3+2] = b;
+    }
+    geometry.attributes.color.needsUpdate = true;
+  }
+
+  const HUE_MAP = [212, 186, 150, 96, 38, 300]; // 0..5 fingers
+  updateColors(HUE_MAP[0]);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  /* ---------------------------------------------------------
+     STATE
+  --------------------------------------------------------- */
+  const state = {
+    radius: 1.7, targetRadius: 1.7,
+    rotX: 0, rotY: 0, targetRotX: 0, targetRotY: 0,
+    groupX: 0, groupY: 0, targetGroupX: 0, targetGroupY: 0,
+    hue: HUE_MAP[0], targetHue: HUE_MAP[0],
+    mode: 'idle', // idle | exploding | reforming
+    explosionElapsed: 0, explosionHold: 0.5,
+    reformElapsed: 0, reformDuration: 1.3,
+    chargeLevel: 0,
+    handsPresent: 0
+  };
+
+  function lerp(a,b,t){ return a + (b-a)*t; }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function easeOutCubic(t){ return 1 - Math.pow(1-t, 3); }
+
+  function triggerExplosion(charge){
+    state.mode = 'exploding';
+    state.explosionElapsed = 0;
+    state.explosionHold = 0.35 + charge * 0.55;
+    const force = 2.4 + charge * 7.5;
+    for(let i=0;i<PARTICLE_COUNT;i++){
+      const bx = basePos[i*3], by = basePos[i*3+1], bz = basePos[i*3+2];
+      const jx = (Math.random()-0.5) * 1.4;
+      const jy = (Math.random()-0.5) * 1.4;
+      const jz = (Math.random()-0.5) * 1.4;
+      let dx = bx + jx, dy = by + jy, dz = bz + jz;
+      const len = Math.sqrt(dx*dx+dy*dy+dz*dz) || 1;
+      dx/=len; dy/=len; dz/=len;
+      const mag = force * (0.55 + Math.random()*0.9);
+      velocities[i*3] = dx * mag;
+      velocities[i*3+1] = dy * mag;
+      velocities[i*3+2] = dz * mag;
+    }
+  }
+
+  /* ---------------------------------------------------------
+     ANIMATION LOOP
+  --------------------------------------------------------- */
+  const clock = new THREE.Clock();
+  let idleSpin = 0;
+
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+
+    // smooth-follow targets
+    const followSpeed = 1 - Math.pow(0.001, dt); // frame-rate independent smoothing
+    state.radius = lerp(state.radius, state.targetRadius, followSpeed);
+    state.rotX = lerp(state.rotX, state.targetRotX, followSpeed);
+    state.rotY = lerp(state.rotY, state.targetRotY, followSpeed);
+    state.groupX = lerp(state.groupX, state.targetGroupX, followSpeed);
+    state.groupY = lerp(state.groupY, state.targetGroupY, followSpeed);
+    state.hue = lerp(state.hue, state.targetHue, 1 - Math.pow(0.02, dt));
+
+    if(state.handsPresent === 0){
+      idleSpin += dt * 0.12;
+    }
+
+    group.rotation.x = state.rotX;
+    group.rotation.y = state.rotY + idleSpin;
+    group.position.x = state.groupX;
+    group.position.y = state.groupY;
+    group.scale.setScalar(state.radius);
+
+    // particle physics
+    if(state.mode === 'exploding'){
+      state.explosionElapsed += dt;
+      for(let i=0;i<PARTICLE_COUNT;i++){
+        const idx = i*3;
+        velocities[idx]   *= 0.985;
+        velocities[idx+1] *= 0.985;
+        velocities[idx+2] *= 0.985;
+        livePos[idx]   += velocities[idx]   * dt;
+        livePos[idx+1] += velocities[idx+1] * dt;
+        livePos[idx+2] += velocities[idx+2] * dt;
+      }
+      geometry.attributes.position.needsUpdate = true;
+      if(state.explosionElapsed >= state.explosionHold){
+        state.mode = 'reforming';
+        state.reformElapsed = 0;
+        reformFrom.set(livePos);
+      }
+    } else if(state.mode === 'reforming'){
+      state.reformElapsed += dt;
+      const t = clamp(state.reformElapsed / state.reformDuration, 0, 1);
+      const te = easeOutCubic(t);
+      for(let i=0;i<PARTICLE_COUNT;i++){
+        const idx = i*3;
+        livePos[idx]   = lerp(reformFrom[idx],   basePos[idx],   te);
+        livePos[idx+1] = lerp(reformFrom[idx+1], basePos[idx+1], te);
+        livePos[idx+2] = lerp(reformFrom[idx+2], basePos[idx+2], te);
+      }
+      geometry.attributes.position.needsUpdate = true;
+      if(t >= 1){ state.mode = 'idle'; }
+    }
+
+    updateColors(state.hue);
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  /* ---------------------------------------------------------
+     HAND TRACKING
+  --------------------------------------------------------- */
+  const videoEl = document.getElementById('webcam');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const hintMain = document.getElementById('hintMain');
+  const fingerReadout = document.getElementById('fingerReadout');
+  const ringWrap = document.getElementById('ringWrap');
+  const ringProgress = document.getElementById('ringProgress');
+  const RING_CIRC = 2 * Math.PI * 52;
+
+  let isPinching = false;
+  let chargeStart = 0;
+
+  function dist2(a, b){
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+
+  function countFingers(lm){
+    let count = 0;
+    const thumbTip = lm[4], thumbIP = lm[3], pinkyMcp = lm[17];
+    if(dist2(thumbTip, pinkyMcp) > dist2(thumbIP, pinkyMcp) * 1.04) count++;
+    const tips = [8, 12, 16, 20], pips = [6, 10, 14, 18];
+    for(let i=0;i<4;i++){
+      if(lm[tips[i]].y < lm[pips[i]].y - 0.02) count++;
+    }
+    return count;
+  }
+
+  function releasePinch(){
+    if(isPinching){
+      isPinching = false;
+      const charge = state.chargeLevel;
+      ringWrap.classList.remove('show');
+      triggerExplosion(charge);
+      state.chargeLevel = 0;
+    }
+  }
+
+  function onResults(results){
+    const numHands = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+    state.handsPresent = numHands;
+
+    if(numHands === 0){
+      statusDot.classList.remove('on');
+      statusText.textContent = 'searching';
+      hintMain.textContent = 'show a hand to move & rotate the field';
+      fingerReadout.textContent = '0 fingers';
+      releasePinch();
+      state.targetGroupX = 0;
+      state.targetGroupY = 0;
+      return;
+    }
+
+    statusDot.classList.add('on');
+
+    if(numHands === 1){
+      const lm = results.multiHandLandmarks[0];
+      statusText.textContent = 'one hand · move & rotate';
+      hintMain.textContent = 'pinch and hold to charge · release to burst';
+
+      const palm = lm[9];
+      const mx = 1 - palm.x; // mirror to match visual selfie view
+      const my = palm.y;
+
+      state.targetRotY = (mx - 0.5) * Math.PI * 1.6;
+      state.targetRotX = (my - 0.5) * Math.PI * 1.0;
+      state.targetGroupX = (mx - 0.5) * 3.6;
+      state.targetGroupY = -(my - 0.5) * 3.6;
+
+      const fingers = countFingers(lm);
+      fingerReadout.textContent = fingers + (fingers === 1 ? ' finger' : ' fingers');
+      state.targetHue = HUE_MAP[clamp(fingers, 0, 5)];
+
+      // pinch detection
+      const pinchDist = dist2(lm[4], lm[8]);
+      const PINCH_ON = 0.045;
+      const PINCH_OFF = 0.06;
+
+      if(!isPinching && pinchDist < PINCH_ON){
+        isPinching = true;
+        chargeStart = performance.now();
+      } else if(isPinching && pinchDist > PINCH_OFF){
+        releasePinch();
+      }
+
+      if(isPinching){
+        const elapsed = (performance.now() - chargeStart) / 1200;
+        state.chargeLevel = clamp(elapsed, 0, 1);
+        const midX = 1 - (lm[4].x + lm[8].x) / 2;
+        const midY = (lm[4].y + lm[8].y) / 2;
+        const px = midX * window.innerWidth;
+        const py = midY * window.innerHeight;
+        ringWrap.style.transform = `translate(${px - 60}px, ${py - 60}px)`;
+        ringWrap.classList.add('show');
+        const offset = RING_CIRC * (1 - state.chargeLevel);
+        ringProgress.setAttribute('stroke-dashoffset', offset.toFixed(2));
+      }
+
+    } else if(numHands === 2){
+      releasePinch();
+      statusText.textContent = 'two hands · resize';
+      hintMain.textContent = 'spread apart to grow · bring together to shrink';
+      fingerReadout.textContent = '—';
+
+      const wristA = results.multiHandLandmarks[0][0];
+      const wristB = results.multiHandLandmarks[1][0];
+      const d = dist2(wristA, wristB);
+      const mapped = lerp(1.0, 3.4, clamp((d - 0.12) / (0.75 - 0.12), 0, 1));
+      state.targetRadius = mapped;
+    }
+  }
+
+  const hands = new Hands({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  });
+  hands.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.6
+  });
+  hands.onResults(onResults);
+
+  let mpCamera = null;
+
+  function fail(msg, err){
+    statusText.textContent = msg;
+    statusDot.classList.remove('on');
+    hintMain.textContent = msg;
+    if(err) console.error('[particle-sphere]', msg, err);
+  }
+
+  async function startTracking(){
+    // Library load check
+    if(typeof Hands === 'undefined' || typeof Camera === 'undefined'){
+      fail('tracking library failed to load (check connection / ad-blocker)');
+      return;
+    }
+    // Secure context check — getUserMedia requires https or localhost
+    if(location.protocol === 'file:'){
+      fail('open this file via a local server, not file:// (see note below)');
+      return;
+    }
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      fail('this browser has no camera API available');
+      return;
+    }
+
+    // Request camera directly first so we get a specific, readable error
+    let stream;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+    } catch(err){
+      if(err.name === 'NotAllowedError') fail('camera permission denied — allow it in the browser/site settings');
+      else if(err.name === 'NotFoundError') fail('no camera found on this device');
+      else if(err.name === 'NotReadableError') fail('camera is in use by another app');
+      else fail('camera error: ' + err.name, err);
+      return;
+    }
+    videoEl.srcObject = stream;
+    statusText.textContent = 'camera on · searching for hands';
+
+    mpCamera = new Camera(videoEl, {
+      onFrame: async () => { await hands.send({ image: videoEl }); },
+      width: 640,
+      height: 480
+    });
+    mpCamera.start().catch(err => fail('camera pipeline error', err));
+  }
+  startTracking();
+
+  /* ---------------------------------------------------------
+     WEBCAM BACKGROUND TOGGLE
+  --------------------------------------------------------- */
+  const bgToggle = document.getElementById('bgToggle');
+  let bgVisible = false;
+  bgToggle.addEventListener('click', () => {
+    bgVisible = !bgVisible;
+    videoEl.classList.toggle('visible', bgVisible);
+    bgToggle.classList.toggle('active', bgVisible);
+    bgToggle.textContent = bgVisible ? 'Hide Webcam' : 'Webcam BG';
+  });
+
+})();
+</script>
+</body>
+</html>
