@@ -3,7 +3,7 @@
 A single-file, framework-free 3D particle sphere (3,000 points) controlled entirely by hand gestures via webcam. Built with [Three.js](https://threejs.org/) and [MediaPipe Hands](https://developers.google.com/mediapipe).
 
 **[Live demo →](https://rishup9798.github.io/particle-sphere/particle-sphere.html)**
-*(update this link after enabling GitHub Pages)*
+
 
 ## Features
 
